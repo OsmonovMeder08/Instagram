@@ -51,7 +51,7 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
         body: JSON.stringify({
           username: formData.username,
           email: formData.email,
-          full_name: formData.fullName, // зависит от backend схемы
+          full_name: formData.fullName,
           bio: formData.bio,
           password: formData.password,
           avatar: `https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150`,
@@ -68,7 +68,7 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
         return;
       }
 
-      // Успешная регистрация, можно автоматически переключить на логин
+      // Успешная регистрация
       onSwitchToLogin();
     } catch (err) {
       setError('Произошла ошибка при регистрации');
@@ -228,3 +228,4 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
     </div>
   );
 }
+x 
