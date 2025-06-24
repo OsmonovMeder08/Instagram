@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Instagram } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
 
 interface RegisterProps {
   onSwitchToLogin: () => void;
@@ -18,14 +17,12 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  const { register } = useAuth();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({
-      ...formData,
+    setFormData(prev => ({
+      ...prev,
       [e.target.name]: e.target.value,
-    });
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,17 +43,33 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
     }
 
     try {
-      const success = await register({
-        username: formData.username,
-        email: formData.email,
-        fullName: formData.fullName,
-        bio: formData.bio,
-        avatar: `https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150`,
+      const response = await fetch('http://127.0.0.1:8000/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: formData.username,
+          email: formData.email,
+          full_name: formData.fullName, // зависит от backend схемы
+          bio: formData.bio,
+          password: formData.password,
+          avatar: `https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150`,
+        }),
       });
-      
-      if (!success) {
-        setError('Пользователь с таким email или именем уже существует');
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          setError('Пользователь с таким email или именем уже существует');
+        } else {
+          setError('Ошибка регистрации, попробуйте позже');
+        }
+        setIsLoading(false);
+        return;
       }
+
+      // Успешная регистрация, можно автоматически переключить на логин
+      onSwitchToLogin();
     } catch (err) {
       setError('Произошла ошибка при регистрации');
     } finally {

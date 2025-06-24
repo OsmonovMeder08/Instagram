@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { Settings, Grid, Bookmark, UserPlus, Edit2, UserMinus } from 'lucide-react';
+import React, { useState, useEffect, ChangeEvent } from 'react';
+import { Settings, Grid, Bookmark, Edit2, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Post } from '../types';
 
 export function Profile() {
-  const { user, users, updateProfile, logout, followUser, unfollowUser, isFollowing } = useAuth();
+  const { user, users, updateProfile: updateLocalProfile, logout, followUser, unfollowUser, isFollowing } = useAuth();
   const [posts] = useLocalStorage<Post[]>('posts', []);
   const [activeTab, setActiveTab] = useState<'posts' | 'saved'>('posts');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -15,16 +15,96 @@ export function Profile() {
     fullName: user?.fullName || '',
     bio: user?.bio || '',
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>(user?.avatar || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const userPosts = posts.filter(post => post.userId === user?.id);
 
-  const handleSaveProfile = () => {
-    if (user) {
-      updateProfile({
-        fullName: editForm.fullName,
-        bio: editForm.bio,
+  useEffect(() => {
+    async function fetchProfile() {
+      if (!user) return;
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/users/${user.id}`);
+        if (!res.ok) throw new Error('Ошибка загрузки профиля');
+        const data = await res.json();
+        setEditForm({
+          fullName: data.fullName || '',
+          bio: data.bio || '',
+        });
+        setAvatarPreview(data.avatar || '');
+      } catch (err: any) {
+        setError(err.message || 'Ошибка сервера');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfile();
+  }, [user]);
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+
+    try {
+      let avatarUrl = avatarPreview;
+
+      // Если выбран новый файл аватара, загружаем его
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+
+        const uploadRes = await fetch(`/api/users/${user.id}/upload-avatar`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json();
+          throw new Error(errData.message || 'Ошибка загрузки аватара');
+        }
+
+        const uploadData = await uploadRes.json();
+        avatarUrl = uploadData.avatarUrl; // URL загруженного аватара
+      }
+
+      // Обновляем профиль с новым аватаром и другими данными
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: editForm.fullName,
+          bio: editForm.bio,
+          avatar: avatarUrl,
+        }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Ошибка обновления профиля');
+      }
+
+      const updatedUser = await res.json();
+      updateLocalProfile(updatedUser);
       setIsEditingProfile(false);
+      setAvatarFile(null);
+      setAvatarPreview(avatarUrl);
+    } catch (err: any) {
+      setError(err.message || 'Ошибка сервера');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
     }
   };
 
@@ -36,18 +116,21 @@ export function Profile() {
     }
   };
 
-  const getFollowers = () => {
-    return users.filter(u => user?.followersList.includes(u.id));
-  };
-
-  const getFollowing = () => {
-    return users.filter(u => user?.followingList.includes(u.id));
-  };
+  const getFollowers = () => users.filter(u => user?.followersList.includes(u.id));
+  const getFollowing = () => users.filter(u => user?.followingList.includes(u.id));
 
   if (!user) return null;
 
   return (
     <div className="max-w-4xl mx-auto pt-4 pb-20 md:pb-4">
+      {error && (
+        <div className="p-3 mb-4 bg-red-100 text-red-700 rounded">{error}</div>
+      )}
+
+      {loading && (
+        <div className="p-3 mb-4 bg-blue-100 text-blue-700 rounded">Загрузка...</div>
+      )}
+
       <div className="px-4 md:px-0">
         {/* Profile Header */}
         <div className="flex flex-col md:flex-row md:items-center md:space-x-8 mb-8">
@@ -55,7 +138,7 @@ export function Profile() {
           <div className="flex justify-center md:justify-start mb-4 md:mb-0">
             <div className="relative">
               <img
-                src={user.avatar}
+                src={avatarPreview}
                 alt={user.username}
                 className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-white shadow-lg"
               />
@@ -84,14 +167,14 @@ export function Profile() {
                 <div className="font-semibold text-lg">{userPosts.length}</div>
                 <div className="text-gray-600 text-sm">публикаций</div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowFollowers(true)}
                 className="text-center hover:text-gray-700"
               >
                 <div className="font-semibold text-lg">{user.followers}</div>
                 <div className="text-gray-600 text-sm">подписчиков</div>
               </button>
-              <button 
+              <button
                 onClick={() => setShowFollowing(true)}
                 className="text-center hover:text-gray-700"
               >
@@ -206,6 +289,25 @@ export function Profile() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Аватар
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="mb-4"
+                />
+                {avatarPreview && (
+                  <img
+                    src={avatarPreview}
+                    alt="avatar preview"
+                    className="w-24 h-24 rounded-full object-cover mb-4 border"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Имя
                 </label>
                 <input
@@ -238,7 +340,8 @@ export function Profile() {
               </button>
               <button
                 onClick={handleSaveProfile}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 Сохранить
               </button>

@@ -76,14 +76,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Заменённая функция login для вызова backend FastAPI
   const login = async (email: string, password: string): Promise<boolean> => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const foundUser = users.find(u => u.email === email);
-    if (foundUser) {
-      setUser(foundUser);
+    try {
+      const response = await fetch('http://127.0.0.1:8000/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username: email, password }),
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      localStorage.setItem('token', data.access_token);
+
+      const userResponse = await fetch('http://127.0.0.1:8000/users/me', {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+
+      if (!userResponse.ok) {
+        return false;
+      }
+
+      const currentUser = await userResponse.json();
+      setUser(currentUser);
       return true;
+    } catch (error) {
+      console.error('Ошибка входа:', error);
+      return false;
     }
-    return false;
   };
 
   const register = async (userData: Omit<User, 'id' | 'followers' | 'following' | 'posts' | 'followingList' | 'followersList'>): Promise<boolean> => {
@@ -110,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('token');
   };
 
   const updateProfile = (userData: Partial<User>) => {

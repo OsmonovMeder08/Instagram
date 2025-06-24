@@ -3,160 +3,139 @@ import { Post } from './Post';
 import { Stories } from './Stories';
 import { Post as PostType, Story } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-
-const mockPosts: PostType[] = [
-  {
-    id: '1',
-    userId: '1',
-    username: 'demo_user',
-    userAvatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150',
-    content: 'Прекрасный день для фотосессии! 📸',
-    media: [
-      {
-        id: '1',
-        type: 'image',
-        url: 'https://images.pexels.com/photos/1055613/pexels-photo-1055613.jpeg?auto=compress&cs=tinysrgb&w=800',
-      },
-    ],
-    likes: 42,
-    likedBy: ['2', '3'],
-    comments: [
-      {
-        id: '1',
-        userId: '2',
-        username: 'photographer_pro',
-        userAvatar: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&cs=tinysrgb&w=150',
-        content: 'Невероятный кадр! 👏',
-        timestamp: new Date(Date.now() - 3600000),
-        likes: 5,
-      },
-    ],
-    timestamp: new Date(Date.now() - 7200000),
-    location: 'Москва, Россия',
-  },
-  {
-    id: '2',
-    userId: '2',
-    username: 'nature_lover',
-    userAvatar: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&cs=tinysrgb&w=150',
-    content: 'Закат в горах. Природа вдохновляет каждый день 🌄',
-    media: [
-      {
-        id: '2',
-        type: 'image',
-        url: 'https://images.pexels.com/photos/417074/pexels-photo-417074.jpeg?auto=compress&cs=tinysrgb&w=800',
-      },
-    ],
-    likes: 128,
-    likedBy: ['1', '3'],
-    comments: [],
-    timestamp: new Date(Date.now() - 14400000),
-  },
-];
-
-const mockStories: Story[] = [
-  {
-    id: '1',
-    userId: '1',
-    username: 'demo_user',
-    userAvatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150',
-    media: {
-      id: '1',
-      type: 'image',
-      url: 'https://images.pexels.com/photos/1055613/pexels-photo-1055613.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    timestamp: new Date(Date.now() - 3600000),
-    viewedBy: ['2'],
-    expiresAt: new Date(Date.now() + 82800000), // 23 часа от текущего времени
-  },
-  {
-    id: '2',
-    userId: '2',
-    username: 'nature_lover',
-    userAvatar: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&cs=tinysrgb&w=150',
-    media: {
-      id: '2',
-      type: 'image',
-      url: 'https://images.pexels.com/photos/417074/pexels-photo-417074.jpeg?auto=compress&cs=tinysrgb&w=400',
-    },
-    timestamp: new Date(Date.now() - 7200000),
-    viewedBy: ['1'],
-    expiresAt: new Date(Date.now() + 79200000), // 22 часа от текущего времени
-  },
-];
 
 export function Feed() {
   const { user } = useAuth();
-  const [posts, setPosts] = useLocalStorage<PostType[]>('posts', mockPosts);
-  const [stories, setStories] = useLocalStorage<Story[]>('stories', mockStories);
+  const [posts, setPosts] = useState<PostType[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingStories, setLoadingStories] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Фильтруем посты только от пользователей, на которых подписан текущий пользователь
-  const feedPosts = posts.filter(post => 
-    post.userId === user?.id || (user?.followingList && user.followingList.includes(post.userId))
+  // Загрузка постов с backend
+  useEffect(() => {
+    async function fetchPosts() {
+      if (!user) return;
+      setLoadingPosts(true);
+      setError(null);
+      try {
+        const res = await fetch(`http://localhost:8000/api/posts?userId=${user.id}`);
+        if (!res.ok) throw new Error('Ошибка загрузки постов');
+        const data: PostType[] = await res.json();
+        setPosts(data);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoadingPosts(false);
+      }
+    }
+    fetchPosts();
+  }, [user]);
+
+  // Загрузка сторис с backend
+  useEffect(() => {
+    async function fetchStories() {
+      if (!user) return;
+      setLoadingStories(true);
+      setError(null);
+      try {
+        const res = await fetch(`http://localhost:8000/api/stories?userId=${user.id}`);
+        if (!res.ok) throw new Error('Ошибка загрузки сторис');
+        const data: Story[] = await res.json();
+        setStories(data);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoadingStories(false);
+      }
+    }
+    fetchStories();
+  }, [user]);
+
+  // Лайк или дизлайк поста — обновляем на backend и локально
+  const handleLike = async (postId: string) => {
+    if (!user) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/posts/${postId}/like`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId: user.id }),
+      });
+      if (!res.ok) throw new Error('Ошибка лайка');
+
+      const updatedPost: PostType = await res.json();
+
+      setPosts((prev) => prev.map(p => p.id === postId ? updatedPost : p));
+    } catch (err) {
+      alert('Не удалось поставить лайк');
+    }
+  };
+
+  // Добавить комментарий — отправляем на backend и обновляем локально
+  const handleComment = async (postId: string, content: string) => {
+    if (!user) return;
+    if (!content.trim()) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/posts/${postId}/comment`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          userId: user.id,
+          username: user.username,
+          userAvatar: user.avatar,
+          content,
+        }),
+      });
+      if (!res.ok) throw new Error('Ошибка комментария');
+
+      const updatedPost: PostType = await res.json();
+
+      setPosts((prev) => prev.map(p => p.id === postId ? updatedPost : p));
+    } catch (err) {
+      alert('Не удалось добавить комментарий');
+    }
+  };
+
+  // Отметить сторис как просмотренную и отправить на backend
+  const handleStoryView = async (storyId: string) => {
+    if (!user) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/stories/${storyId}/view`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ userId: user.id }),
+      });
+      if (!res.ok) throw new Error('Ошибка отметки просмотра');
+
+      const updatedStory: Story = await res.json();
+
+      setStories((prev) => prev.map(s => s.id === storyId ? updatedStory : s));
+    } catch (err) {
+      // Можно игнорировать ошибку или показать сообщение
+    }
+  };
+
+  if (loadingPosts || loadingStories) {
+    return <div className="text-center py-10">Загрузка...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-10 text-red-600">Ошибка: {error}</div>;
+  }
+
+  // Фильтруем посты, чтобы показывать только от пользователя и тех, на кого подписан
+  const feedPosts = posts.filter(post =>
+    post.userId === user?.id || user?.followingList.includes(post.userId)
   );
-
-  const handleLike = (postId: string) => {
-    if (!user) return;
-
-    setPosts(posts.map(post => {
-      if (post.id === postId) {
-        const isLiked = post.likedBy.includes(user.id);
-        return {
-          ...post,
-          likedBy: isLiked 
-            ? post.likedBy.filter(id => id !== user.id)
-            : [...post.likedBy, user.id],
-          likes: isLiked ? post.likes - 1 : post.likes + 1,
-        };
-      }
-      return post;
-    }));
-  };
-
-  const handleComment = (postId: string, content: string) => {
-    if (!user) return;
-
-    const newComment = {
-      id: Date.now().toString(),
-      userId: user.id,
-      username: user.username,
-      userAvatar: user.avatar,
-      content,
-      timestamp: new Date(),
-      likes: 0,
-    };
-
-    setPosts(posts.map(post => {
-      if (post.id === postId) {
-        return {
-          ...post,
-          comments: [...post.comments, newComment],
-        };
-      }
-      return post;
-    }));
-  };
-
-  const handleStoryView = (storyId: string) => {
-    if (!user) return;
-
-    setStories(stories.map(story => {
-      if (story.id === storyId && !story.viewedBy.includes(user.id)) {
-        return {
-          ...story,
-          viewedBy: [...story.viewedBy, user.id],
-        };
-      }
-      return story;
-    }));
-  };
 
   return (
     <div className="max-w-2xl mx-auto pt-4 pb-20 md:pb-4">
       {/* Stories */}
       <Stories stories={stories} onStoryView={handleStoryView} />
-      
+
       {/* Posts */}
       <div className="px-4 md:px-0">
         {feedPosts.length === 0 ? (
