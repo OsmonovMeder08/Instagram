@@ -228,4 +228,3 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
     </div>
   );
 }
-x 
