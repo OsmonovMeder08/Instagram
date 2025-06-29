@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.middleware.cors import CORSMiddleware  # 🔥 ДОБАВЛЕНО
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -10,13 +10,15 @@ import models, crud, schemas, auth
 # Инициализация базы
 Base.metadata.create_all(bind=engine)
 
-# Создание FastAPI приложения
 app = FastAPI()
 
-# ✅ РАЗРЕШЕНИЕ ЗАПРОСОВ С ФРОНТЕНДА (например, localhost:5173)
+# Настройка CORS (разрешаем запросы с фронтенда)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # или ["*"] для всех
+    allow_origins=[
+        "http://localhost:5173",     # локальный фронтенд
+        "https://your-frontend.com"  # замени на адрес продакшн фронтенда
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,9 +46,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = crud.get_user_by_username(db, form_data.username)
-    if not user:
-        raise HTTPException(status_code=400, detail="Неверное имя пользователя или пароль")
-    if not crud.verify_password(form_data.password, user.hashed_password):
+    if not user or not crud.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Неверное имя пользователя или пароль")
     access_token = auth.create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
