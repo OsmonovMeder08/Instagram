@@ -18,6 +18,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",     # локальный фронтенд
         "https://your-frontend.com"  # замени на адрес продакшн фронтенда
+        "https://meder-flax.vercel.app" 
     ],
     allow_credentials=True,
     allow_methods=["*"],
